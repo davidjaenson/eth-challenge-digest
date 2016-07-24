@@ -4,12 +4,18 @@ contract HashMethod {
 }
 
 
+contract SHA3 is HashMethod {
+    function size() returns (uint256) {
+        return 32;
+    }
+
+    function digest(bytes32 input) returns (bytes32) {
+        return sha3(input);
+    }
+}
+
 
 contract MD5 is HashMethod {
-
-    event Debug(uint256 g, uint256 index);
-    event DebugRound(uint32 a, uint32 b, uint32 c, uint32 d);
-
     uint32[] s =  [
                                 7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,
                                 5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,
@@ -77,7 +83,6 @@ contract MD5 is HashMethod {
             uint32[4] memory v = [a0, b0, c0, d0];
             for(uint32 j = 0; j < 64; ++j) {
                 v = do_sub_round(data, i, j, v[0], v[1], v[2], v[3]);
-                DebugRound(v[0], v[1], v[2], v[3]);
             }
             return (a0 + v[0], b0 + v[1], c0 + v[2], d0 + v[3]);
     }
@@ -99,7 +104,6 @@ contract MD5 is HashMethod {
             g = (7*j) % 16;
         }
         uint32 M = do_get_sub_round_seed(data, i, g*4);
-        Debug(g, M);
         return [D, B + left_rotate(A + F + K[j] +  M, s[j]), B, C];
     }
 
@@ -160,30 +164,21 @@ contract ChallengeDigest {
         if(!challenge.creator.send(challenge.reward)) throw;
     }
 
-
     function solve(uint256 challengeIndex, bytes input) {
-        Challenge challenge = challenges[challengeIndex];
-        Debug("number of challenges", challenges.length, challengeIndex);
-        Debug("chosen status", uint256(challenge.status), 0);
+        Challenge storage challenge = challenges[challengeIndex];
         if(challenge.status != ChallengeStatus.Active) throw;
-        Debug("status ok", uint256(challenge.status), 0);
 
         challenge.status = ChallengeStatus.Processing; // needed to avoid reentry from the digest method
-        Debug("status is now Processing", uint256(challenge.status), 0);
 
         bytes32 test = challenge.hashMethod.digest(input);
         uint256 size = challenge.hashMethod.size();
-        Debug("Fetched from hashMethod", uint256(test), size);
 
-        Debug("Solution checking", uint256(test), uint256(challenge.digest));
         if(!checkSolution(test, challenge.digest, size)) throw;
-        Debug("Solution checks out", 0, 0);
-
         challenge.status = ChallengeStatus.Solved;
         challenge.solution = input;
-        Debug("Sending reward of ", challenge.reward, 0);
+
         if(!msg.sender.send(challenge.reward)) throw;
-        Debug("Completed Sending reward of ", challenge.reward, 0);
+        Debug("Completed Sending reward of ", challenge.reward, uint256(challenge.status));
     }
 
 
