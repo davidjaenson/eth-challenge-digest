@@ -39,22 +39,22 @@ contract MD5 is HashMethod {
         return 16;
     }
 
-    function digest(bytes in_data) returns (bytes32) {
+    function digest(bytes input) returns (bytes32) {
         uint32 a0 = 0x67452301;   //A
         uint32 b0 = 0xefcdab89;   //B
         uint32 c0 = 0x98badcfe;   //C
         uint32 d0 = 0x10325476;   //D
         
-        uint256 length = (in_data.length * 8) % (2 ** 64);
+        uint256 length = (input.length * 8) % (2 ** 64);
 
-        bytes memory data = new bytes(((in_data.length-1) / 64) * 64 + 64); 
+        bytes memory data = new bytes(((input.length+8) / 64) * 64 + 64); 
         uint256 i;
-        for(i = 0; i < in_data.length; ++i) {
-            data[i] = in_data[i];
+        for(i = 0; i < input.length; ++i) {
+            data[i] = input[i];
         }
         
-        data[in_data.length] = byte(128);
-        /*for(i = in_data.length+1; i < data.length-8; ++i) {
+        data[input.length] = byte(128);
+        /*for(i = input.length+1; i < data.length-8; ++i) {
             data[i] = 0;
         }*/
         for(i = 0; i < 8; ++i) {
@@ -65,19 +65,11 @@ contract MD5 is HashMethod {
             (a0, b0, c0, d0) = do_round(data, i, a0, b0, c0, d0);
         }
 
-        Debug(0, a0);
-        Debug(0, b0);
-        Debug(0, c0);
-        Debug(0, d0);
         uint256 digest;
         digest |= uint256(reverse(a0)) * (2 ** 224);
-        Debug(0, digest);
         digest |= uint256(reverse(b0)) * (2 ** 192);
-        Debug(1, digest);
         digest |= uint256(reverse(c0)) * (2 ** 160);
-        Debug(2, digest);
         digest |= uint256(reverse(d0)) * (2 ** 128);
-        Debug(3, digest);
         return bytes32(digest);
     }
 
@@ -112,10 +104,10 @@ contract MD5 is HashMethod {
     }
 
     function reverse(uint32 n) returns (uint32) {
-        return  ((n / (2 ** 24))   & 0xff) |
-                ((n * (2 * 8))     & 0xff0000) | 
-                ((n / (2 ** 8))    & 0xff00) |
-                ((n * (2 ** 24))   & 0xff000000);
+        return  (n & 0xff000000) / (2 ** 24)   |
+                (n & 0x00ff0000) / (2 ** 8)    | 
+                (n & 0x0000ff00) * (2 ** 8)    |
+                (n & 0x000000ff) * (2 ** 24);
     }
 
 
@@ -134,18 +126,20 @@ contract MD5 is HashMethod {
 contract ChallengeDigest {
     enum ChallengeStatus {Solved, Active, Cancelled, Processing}
 
+    event Debug(string, uint256, uint256);
+
     struct Challenge {
         ChallengeStatus status;
         HashMethod hashMethod;
         uint256 reward;
         address creator;
-        bytes digest;
+        bytes32 digest;
         bytes solution;
     }
 
     Challenge[] challenges;
 
-    function create(address hashMethod, bytes digest) {
+    function create(address hashMethod, bytes32 digest) {
         challenges.push(Challenge(
             ChallengeStatus.Active,
             HashMethod(hashMethod),
@@ -169,23 +163,32 @@ contract ChallengeDigest {
 
     function solve(uint256 challengeIndex, bytes input) {
         Challenge challenge = challenges[challengeIndex];
-        
+        Debug("number of challenges", challenges.length, challengeIndex);
+        Debug("chosen status", uint256(challenge.status), 0);
         if(challenge.status != ChallengeStatus.Active) throw;
+        Debug("status ok", uint256(challenge.status), 0);
 
         challenge.status = ChallengeStatus.Processing; // needed to avoid reentry from the digest method
+        Debug("status is now Processing", uint256(challenge.status), 0);
 
         bytes32 test = challenge.hashMethod.digest(input);
+        uint256 size = challenge.hashMethod.size();
+        Debug("Fetched from hashMethod", uint256(test), size);
 
-        if(!checkSolution(test, challenge.digest)) throw;
+        Debug("Solution checking", uint256(test), uint256(challenge.digest));
+        if(!checkSolution(test, challenge.digest, size)) throw;
+        Debug("Solution checks out", 0, 0);
 
         challenge.status = ChallengeStatus.Solved;
         challenge.solution = input;
+        Debug("Sending reward of ", challenge.reward, 0);
         if(!msg.sender.send(challenge.reward)) throw;
+        Debug("Completed Sending reward of ", challenge.reward, 0);
     }
 
 
-    function checkSolution(bytes32 test, bytes answer) returns (bool) {
-        for(uint256 i = 0; i < answer.length; ++i) {
+    function checkSolution(bytes32 test, bytes32 answer, uint256 size) returns (bool) {
+        for(uint256 i = 0; i < size; ++i) {
             if(test[i] != answer[i]) return false;
         }
         return true;
